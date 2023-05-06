@@ -1,0 +1,559 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+# This template will create a Ubuntu 20 Linux server to process NASA DRL data
+# from AQUA, TERRA, SMPP, etc
+
+# This cfn template:
+# - Creates an EC2 Instance to run IPOPP
+# - Installs IPOPP and all pre-req software onto the EC2 instance.
+# - Configures the IPOPP instance to auto-start ipopp-ingest at boot
+# - Creates an SNS topic to notify completion of ipopp-ingest
+# - Creates a Lambda function to auto-start the IPOPP instance
+# - Upon receipt of an SNS notification from the Reciver instance
+
+# Watch completion of the EC2 instance config in /var/log/user-data.log
+
+# After EC2 instance config is complete:
+# - Tunnel VNC traffic through an SSH session to the instance
+# - Connect ot the instance using a VNC client
+# - run 'drl/tools/dashboard.sh &' to configure required IPOPP SPAs'
+# - Stop the EC2 instance
+
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+    Creates an EC2 instance to be used for IPOPP processing 
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - 
+        Label:
+          default: "IPOPP instance configuration"
+        Parameters:
+          - SatelliteName
+          - ReceiverCloudFormationStackName
+          - DataS3Bucket
+          - SoftwareS3Bucket
+          - InstanceType
+          - IpoppPassword
+          - VpcId 
+          - SubnetId
+          - SSHCidrBlock
+          - SSHKeyName
+          - NotificationEmail
+
+
+
+Parameters:
+
+  SSHCidrBlock:
+    Description: The CIDR Block that the security group will allow ssh access to an instance. The CIDR Block has the form x.x.x.x/x.
+    Type: String
+    Default: "15.16.17.18/32"
+    AllowedPattern : '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+    ConstraintDescription : must be a valid CIDR range of the form x.x.x.x/x, for example "15.16.17.18/32".
+
+  SSHKeyName:
+    Description: Name of the ssh key used to access ec2 hosts. Set this up ahead of time.
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to launch instances in.
+
+  SubnetId:
+    Description: Subnet to launch instances in
+    Type: AWS::EC2::Subnet::Id
+
+  SoftwareS3Bucket:
+    Type: String
+    Description: Stores software for Satellites data processing.
+    Default: "your-software-bucket-name"
+
+  DataS3Bucket:
+    Type: String
+    Description: Data delivery bucket created in receiver stack.
+    Default: "your-data-delivery-bucket"
+
+  InstanceType:
+    Description: EC2 Instance Type
+    Type: String
+    Default: "m5.4xlarge"
+    AllowedValues:
+      - m5.4xlarge
+      - m5d.4xlarge
+      - c5.4xlarge
+      - c5d.4xlarge
+      - c5.xlarge
+
+  IpoppPassword:
+    Type: String
+    Description: Password for the ipopp user, minimul length 8 chars, only alpha-numeric chars (upper/lower case), no special chars allowed
+    Default: 'Ch4ng3MePl34s3'
+    NoEcho: true
+    AllowedPattern: "[A-Za-z0-9-]{8,}+"
+
+  SatelliteName:
+    Type: String
+    Description: Used for data processing task
+    Default: "JPSS1"
+    AllowedValues:
+      - JPSS1
+
+  NotificationEmail:
+    Default: 'someone@somewhere.com'
+    Description: "Email address to receive contact updates"
+    Type: String
+    AllowedPattern: "^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$"
+    ConstraintDescription: "Must be a valid email adress"
+
+  ReceiverCloudFormationStackName:
+    Type: String
+    Description: The name of the CloudFormation Stack that created the receiver configuration.
+    Default: 'gs-receiver-jpss1'
+
+
+Mappings:
+  # The relevant Ubuntu 20.04 amis depending on the region
+  AmiMap:
+    us-east-1:
+      ami: ami-0aa2b7722dc1b5612
+    us-east-2:
+      ami: ami-06c4532923d4ba1ec
+    us-west-2:
+      ami: ami-0db245b76e5c21ca1
+    af-south-1:
+      ami: ami-043ae129b84099da5
+    ap-northeast-2:
+      ami: ami-0c6e5afdd23291f73
+    ap-southeast-1:
+      ami: ami-062550af7b9fa7d05
+    ap-southeast-2:
+      ami: ami-03d0155c1ef44f68a
+    eu-central-1:
+      ami: ami-0d497a49e7d359666
+    eu-west-1:
+      ami: ami-05147510eb2885c80 
+    eu-north-1:
+      ami: ami-0cf13cb849b11b451    
+    me-south-1:
+      ami: ami-0f11b4602adfe829d
+    sa-east-1:
+      ami: ami-002a875adefcee7fc 
+
+
+
+Resources:
+
+  # Policy to give the Lambda function permission to describe, start and stop EC2 instances
+  GsIpoppLambdaRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:StartInstances
+              - ec2:StopInstances
+            Resource:
+              - Fn::Sub:
+                - "arn:aws:ec2:${Region}:${Account}:instance/${Instance}"
+                - Region: !Ref AWS::Region
+                  Account: !Ref AWS::AccountId
+                  Instance: !Ref ProcessorInstance
+
+          - Effect: Allow
+            Action:
+              - ec2:DescribeInstanceStatus
+              - ec2:DescribeNetworkInterfaces
+              #- groundstation:*
+            Resource:
+              - '*'
+
+  # Role using above policy - attached to Lambda function
+  GsIpoppLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: '/'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref GsIpoppLambdaRolePolicy
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action:
+            - sts:AssumeRole
+
+  # Allows SNS to invoke the Lambda function
+  LambdaResourcePolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref IpoppSnsHandlerLambda
+      Principal: "sns.amazonaws.com"
+      Action: "lambda:InvokeFunction"
+      #SourceArn: !Ref ReceiverSNSTopicArn
+      SourceArn:
+        Fn::ImportValue: !Sub "${ReceiverCloudFormationStackName}-SnsTopicArn"
+
+  # SNS Subscription to trigger the Lambda function
+  LambdaSnsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !GetAtt IpoppSnsHandlerLambda.Arn
+      #TopicArn: !Ref ReceiverSNSTopicArn
+      TopicArn:
+        Fn::ImportValue: !Sub "${ReceiverCloudFormationStackName}-SnsTopicArn"
+      Protocol: 'lambda'
+
+  # Lambda function to start the IPOPP instance when the Receiver Node sends a completion SNS
+  IpoppSnsHandlerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handle_sns_event
+      Runtime: python3.7
+      MemorySize: 128
+      Timeout: 120
+      Role: !GetAtt GsIpoppLambdaRole.Arn
+      Environment:
+        Variables:
+          EC2_INSTANCE_ID: !Ref ProcessorInstance
+      Code:
+        ZipFile: |
+              import json
+              import logging
+              import boto3
+              import os
+
+              logger = logging.getLogger(__name__)
+              logger.setLevel(logging.INFO)
+
+              # Get instance ID from Env Var
+              ec2_instance_id = os.environ['EC2_INSTANCE_ID']
+
+              def handle_sns_event(lambda_event, context):
+                  logger.info(f"Called with event {json.dumps(lambda_event)}")
+
+                  #   Get result from SNS Message
+                  SnsMessage = json.loads(lambda_event['Records'][0]['Sns']['Message'])
+                  result = SnsMessage["Result"]
+
+                  if result=="Success":
+                      print("Result: %s. Starting EC2 Instance" % result)
+                      ec2_client = boto3.client("ec2")
+                      logger.info(f"Checking EC2 Instance: {ec2_instance_id}")
+                      start_instance(ec2_client)
+                  else:
+                      print("Result: %s. Will not start EC2 Instance" % result)
+
+              def get_instance_state(ec2_client, instance_id):
+                  response = ec2_client.describe_instance_status(InstanceIds=[instance_id], IncludeAllInstances=True)
+                  instance_statuses = response.get("InstanceStatuses", {})
+                  assert len(instance_statuses) == 1
+
+                  instance_state = instance_statuses[0].get("InstanceState", {}).get("Name")
+                  logger.info(f"Instance {instance_id} state is {instance_state}")
+                  return instance_state
+
+              def start_instance(ec2_client):
+                  instance_state = get_instance_state(ec2_client, ec2_instance_id)
+                  if instance_state == "stopped":
+                      logger.info(f"Starting {ec2_instance_id}")
+                      ec2_client.start_instances(InstanceIds=[ec2_instance_id])
+                  else:
+                      logger.warning(f"{ec2_instance_id} is not stopped (state is {instance_state}). Skipping instance start operation")
+
+  # The EC2 instance assumes this role.
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+
+  # IAM policy providing the minimum S3 access required to the EC2 instance
+  InstanceRoleS3Policy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Action:
+          - "s3:PutObject"
+          - "s3:PutObjectAcl"
+          - "s3:GetObject"
+          - "s3:DeleteObjectVersion"
+          - "s3:DeleteObject"
+          Effect: Allow
+          Resource:
+            Fn::Join:
+            - ""
+            -
+              - "arn:aws:s3:::"
+              - !Ref SoftwareS3Bucket
+              - "/*"
+        - Action:
+          - "s3:PutObject"
+          - "s3:PutObjectAcl"
+          - "s3:GetObject"
+          - "s3:DeleteObjectVersion"
+          - "s3:DeleteObject"
+          Effect: Allow
+          Resource:
+            Fn::Join:
+            - ""
+            -
+              - "arn:aws:s3:::"
+              - !Ref DataS3Bucket
+              - "/*"
+        - Action:
+          - "s3:ListBucket"
+          Effect: Allow
+          Resource:
+            Fn::Join:
+              - ""
+              -
+                - "arn:aws:s3:::"
+                - !Ref SoftwareS3Bucket
+        - Action:
+          - "s3:ListBucket"
+          Effect: Allow
+          Resource:
+            Fn::Join:
+              - ""
+              -
+                - "arn:aws:s3:::"
+                - !Ref DataS3Bucket
+
+      Roles:
+      - Ref: InstanceRole
+
+  # Gives the EC2 instance permission to publish the completion SNS Notification
+  InstanceRoleSNSPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Action:
+          - "sns:Publish"
+          Effect: Allow
+          Resource: !Ref SNSTopic
+      Roles:
+      - Ref: InstanceRole
+
+  # SNS Topic used to send the completion notification
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName:
+        Fn::Join:
+          - "-"
+          - - "GroundStation-Process"
+            - !Ref SatelliteName
+      Subscription:
+        - Endpoint: !Ref NotificationEmail
+          Protocol: "email"
+
+  # The instance profile for your EC2 instance.
+  GeneralInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    DependsOn: InstanceRole
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  # The security group for your EC2 instance.
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: AWS Ground Station receiver instance security group.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Allow SSH access from the CIDR block specified in the parameters.
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHCidrBlock
+
+  # EC2 instance with processing software installed
+  ProcessorInstance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - InstanceSecurityGroup
+      - GeneralInstanceProfile
+    Properties:
+      DisableApiTermination: false
+      IamInstanceProfile: !Ref GeneralInstanceProfile
+      ImageId:
+        Fn::FindInMap:
+          [AmiMap, Ref: "AWS::Region", ami]
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref SSHKeyName
+      NetworkInterfaces:
+      - AssociatePublicIpAddress: true
+        DeleteOnTermination: true
+        DeviceIndex: 0
+        SubnetId: !Ref SubnetId
+        GroupSet:
+        - !Ref InstanceSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: gp2
+            VolumeSize: 300
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Join:
+              - "-"
+              - - Processor
+                - !Ref AWS::StackName
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              echo `date +'%F %R:%S'` "INFO: Logging Setup" >&2
+
+              export DEBIAN_FRONTEND=noninteractive
+              export SPACE_SOLUTIONS_BUCKET="space-solutions-${AWS::Region}"
+
+              echo '========================================='
+              echo "Installing pre-req software"
+              echo '========================================='
+              apt-get update -y && apt-get upgrade -y
+              apt-get install -y jq
+              apt-get install -y firefox
+              apt-get install -y unzip 
+              apt-get install -y python
+              apt-get install -y python3
+              apt-get install -y python-pip
+              apt-get install -y python3-pip
+              apt-get install -y wget nano libaio1 tcsh bc ed rsync perl default-jdk default-jre libaio-dev
+              python -m pip install --upgrade pip --user
+              python3 -m pip install --upgrade pip --user
+              echo "export PATH=~/.local/bin:$PATH" >> ~/.profile
+              source ~/.profile
+              echo "Pre-req software install finished"
+
+              echo '========================================='
+              echo "Install AWS CLI..."
+              echo '========================================='
+              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" 
+              unzip awscliv2.zip > /dev/null
+              ./aws/install
+              echo "AWS CLI install finished"
+
+              echo "Getting IPOPP scripts"
+              mkdir -p /opt/aws/groundstation/bin/
+
+              echo "Creating /opt/aws/groundstation/bin/getSNSTopic.sh"
+              echo "export SNS_TOPIC=${SNSTopicArn}" > /opt/aws/groundstation/bin/getSNSTopic.sh
+
+              aws s3 cp s3://${SoftwareS3Bucket}/software/IPOPP/ipopp-ingest.sh /opt/aws/groundstation/bin/ipopp-ingest.sh --region ${AWS::Region}
+              aws s3 cp s3://${SoftwareS3Bucket}/software/IPOPP/install-ipopp.sh /opt/aws/groundstation/bin/install-ipopp.sh --region ${AWS::Region}
+              chmod +x /opt/aws/groundstation/bin/*.sh
+
+              echo "Creating ipopp user"
+              adduser ipopp
+              sudo usermod -aG sudo ipopp
+
+
+              echo "Installing Tight VNC Server"
+              apt-get install -y xfce4 xfce4-goodies terminator
+              apt-get install -y tightvncserver
+              # menu bar fix for tightvnc on ubuntu20.04 LTS
+              curl "http://launchpadlibrarian.net/494460182/xfwm4_4.14.5-1_amd64.deb" -o /xfwm4_4.14.5-1_amd64.deb
+              apt-get install /xfwm4_4.14.5-1_amd64.deb
+
+              echo "Setting ipopp user password"
+              echo "ipopp:${IpoppPassword}" | chpasswd
+
+              echo "Setting ipopp user vnc password"
+              mkdir -p /home/ipopp/.vnc
+              echo ${IpoppPassword} | vncpasswd -f > /home/ipopp/.vnc/passwd
+
+              # Create /home/ipopp/.vnc/xstartup
+              echo '#!/bin/bash' > /home/ipopp/.vnc/xstartup
+              echo "xrdb /home/ipopp/.Xresources" >> /home/ipopp/.vnc/xstartup
+              echo "startxfce4 &" >> /home/ipopp/.vnc/xstartup
+              chmod +x /home/ipopp/.vnc/xstartup
+
+              # Sort out file permissions
+              chown -R ipopp:ipopp /home/ipopp/.vnc
+              chmod 0600 /home/ipopp/.vnc/passwd
+
+              # Start vnc server
+              aws s3 cp s3://$SPACE_SOLUTIONS_BUCKET/software/gnu-radio/vncserver /etc/init.d/vncserver --region ${AWS::Region}
+              sed -i 's/ubuntu/ipopp/g' /etc/init.d/vncserver
+              sed -i 's/"1024x768"/"1360x768"/g' /etc/init.d/vncserver
+              chmod +x /etc/init.d/vncserver
+              systemctl daemon-reload
+              systemctl enable vncserver
+              systemctl start vncserver
+
+              echo "Creating ipopp logfile"
+              touch /opt/aws/groundstation/bin/ipopp-ingest.log
+              chmod 777 /opt/aws/groundstation/bin/ipopp-ingest.log
+
+              echo "Adding IPOPP ingest to /usr/local/bin/start-ipopp.sh"
+              echo "#!/bin/bash" >> /usr/local/bin/start-ipopp.sh
+              echo "runuser -l ipopp -c \"/opt/aws/groundstation/bin/ipopp-ingest.sh ${SatelliteName} ${SoftwareS3Bucket} ${DataS3Bucket} | tee /opt/aws/groundstation/bin/ipopp-ingest.log 2>&1\"" >> /usr/local/bin/start-ipopp.sh 
+              echo "systemctl poweroff -i" >> /usr/local/bin/start-ipopp.sh
+              chmod +x /usr/local/bin/start-ipopp.sh
+
+              echo '========================================='
+              echo "Create systemd service to start IPOPP at boot"
+              echo '========================================='
+              echo "[Unit]" > /etc/systemd/system/start-ipopp.service && \
+              echo "Description=Start IPOPP injest service" >> /etc/systemd/system/start-ipopp && \
+              echo "Wants=network-online.target" >> /etc/systemd/system/start-ipopp && \
+              echo "After=network.target network-online.target" >> /etc/systemd/system/start-ipopp.service && \
+              echo "[Service]" >> /etc/systemd/system/start-ipopp.service && \
+              echo "Type=simple" >> /etc/systemd/system/start-ipopp.service && \
+              echo "StandardOutput=journal" >> /etc/systemd/system/start-ipopp.service && \
+              echo "ExecStart=/usr/local/bin/start-ipopp.sh" >> /etc/systemd/system/start-ipopp.service && \
+              echo "[Install]" >> /etc/systemd/system/start-ipopp.service && \
+              echo "WantedBy=multi-user.target" >> /etc/systemd/system/start-ipopp.service && \
+              systemctl enable start-ipopp && \
+              systemctl daemon-reload
+
+              echo "Sending completion SNS notification"
+            
+              export MESSAGE="IPOPP setup requires manual intervention. Please log into the processor instance via VNC and download the IPOPP software package from NASA DRL. Navigate to the DRL IPOPP download page (https://directreadout.sci.gsfc.nasa.gov/?id=dspContent&cid=347&type=software) and follow the instructions under the Installation heading. Refer to the Earth Observation Guide for further details."
+              aws sns publish --topic-arn ${SNSTopicArn} --message "$MESSAGE" --region ${AWS::Region}
+
+              echo "IPOPP setup requires manual intervention. Please log into this instance via VNC and download the IPOPP software package from NASA DRL. Navigate to the DRL IPOPP download page (https://directreadout.sci.gsfc.nasa.gov/?id=dspContent&cid=347&type=software) and follow the instructions under the Installation heading. Refer to the Earth Observation Guide for further details."
+
+            - SNSTopicArn: !Ref SNSTopic
