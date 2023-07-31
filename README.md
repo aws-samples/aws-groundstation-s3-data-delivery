@@ -61,10 +61,6 @@ Send an email to aws-groundstation@amazon.com with the following details:
 Make sure at minimum you have one SSH key and one VPC with an attached IGW and one public subnet. 
 You can use the default VPC provided in the region. Follow [these instructions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-key-pairs.html#having-ec2-create-your-key-pair) to create an EC2 SSH key in the region that you will be deploying your EC2 resources. 
 
-##	Register on NASA DRL website
-
-NASA DRL requires everyone to register who uses their RT-STPS and IPOPP software. Browse to [the NASA DRL website](https://directreadout.sci.gsfc.nasa.gov/?id=software) and register using your company email address. You will need to confirm the email address. Registration can take a few days to be approved by NASA staff. 
-
 ##  Create working directory
 
 ### Linux / Mac
@@ -87,7 +83,7 @@ cd %WORKING_DIR%
 Install Git by following [these instructions](https://github.com/git-guides/install-git).
 
 ```bash
-git clone https://github.com/awslabs/aws-groundstation-s3-data-delivery.git
+git clone https://github.com/aws-samples/aws-groundstation-s3-data-delivery.git
 ```
 
 Alternatively, you can download this GitHub repository by clicking Code -> Download ZIP at the top of this page. 
@@ -126,35 +122,6 @@ set S3_BUCKET=your-software-bucket-name
 aws s3 mb s3://%S3_BUCKET% --region %REGION%
 ```
 
-##	Download RT-STPS from NASA DRL website
-
-**Optional:** If you already have access to these files on another S3 bucket there is no need to download them again.
-
-Download the following RT-STPS files from [NASA DRL](https://directreadout.sci.gsfc.nasa.gov/?id=dspContent&cid=325&type=software) to $WORKING_DIR: (Or copy them from another friendly bucket - see below)
-- RT-STPS_7.0.tar.gz
-- RT-STPS_7.0_PATCH_1.tar.gz
-
-
-##	Upload RT-STPS to the new software S3 bucket:
-
-If you already have the files in another S3 bucket then replace '$WORKING_DIR' with 's3://YOUR-S3-BUCKET/software/RT-STPS/'. 
-If your S3 bucket is in a different region you will need to add a --source-region tag at the end of the command. 
-
-
-### Linux / Mac
-
-```bash
-aws s3 cp $WORKING_DIR/RT-STPS_7.0.tar.gz s3://${S3_BUCKET}/software/RT-STPS/RT-STPS_7.0.tar.gz --region $REGION 
-aws s3 cp $WORKING_DIR/RT-STPS_7.0_PATCH_1.tar.gz s3://${S3_BUCKET}/software/RT-STPS/RT-STPS_7.0_PATCH_1.tar.gz --region $REGION 
-```
-
-### Windows
-
-```bash
-aws s3 cp %WORKING_DIR%\RT-STPS_7.0.tar.gz s3://%S3_BUCKET%/software/RT-STPS/RT-STPS_7.0.tar.gz --region %REGION% 
-aws s3 cp %WORKING_DIR%\RT-STPS_7.0_PATCH_1.tar.gz s3://%S3_BUCKET%/software/RT-STPS/RT-STPS_7.0_PATCH_1.tar.gz --region %REGION% 
-```
-
 ## Copy the lambda code and RT-STPS orchestration script to the software bucket 
 
 The lambda.zip and rt-stps-process.sh are found in this repository.
@@ -175,7 +142,7 @@ aws s3 cp %WORKING_DIR%\aws-groundstation-s3-data-delivery\rt-stps/rt-stps-proce
 
 ## Create the CloudFormation Stack for S3 Data Delivery and the RT-STPS instance
 
-Create a CFN stack using the template: jpss1-gs-to-s3.yml. [Learn how to create a CFN stack](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-console-create-stack.html). On the [stack creation console](https://console.aws.amazon.com/cloudformation) click Create Stack -> With New Resource. Then select the "Template is ready" radio button and "Upload a template file" radio button. Upload the aqua-rt-stps.yml file here. Do not edit the aqua-rt-stps.yml file manually!
+Create a CFN stack using the template: jpss1-gs-to-s3.yml. [Learn how to create a CFN stack](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-console-create-stack.html). On the [stack creation console](https://console.aws.amazon.com/cloudformation) click Create Stack -> With New Resource. Then select the "Template is ready" radio button and "Upload a template file" radio button. Upload the jpss1-gs-to-s3.yml file here. Do not edit the jpss1-gs-to-s3.yml file manually!
 
 Enter parameters as follows in the CloudFormation console:
 
@@ -305,14 +272,13 @@ tail -F /var/log/user-data.log
 
 You now have the following created in your AWS Account:
 
-- An EC2 Instance running Ubuntu 20
+- An EC2 Instance running Ubuntu 20 and the IPOPP software
 - An SNS topic to notify processing completion
 - A Lambda function to auto-start the IPOPP instance, triggered by the receiver SNS Topic
 
 #	Processor Instance Configuration - IPOPP
 
-
-These last steps in the configuration of the IPOPP processor instance must be completed manually due to constraints in the distribution and operation of the NASA DRL IPOPP software.  
+These last steps in the configuration of the IPOPP processor instance must be completed manually.  
 
 
 ## Prerequisites
@@ -353,51 +319,6 @@ su -l ipopp
 sudo systemctl stop vncserver.service
 sudo systemctl start vncserver.service
 ```
-
-
-## Download and install DRL-IPOPP_5.0.tar.gz
-
-**Optional** If you already have this archive saved locally or in an S3 bucket then upload it to ${S3_BUCKET}/software/IPOPP/DRL-IPOPP_5.0.tar.gz If you do not have access to the archive then follow these installation instructions.  
-
-**Note:** NASA DRL requires you to use a system with the same IP address to download and run the DRL-IPOPP_5.0.tar.gz download script. If you restart your EC2 instance before completing the download and it acquires a new Public IP address then it will be necessary to download and run a fresh script. The script must also be run to completion within 24 hours after it was downloaded, or it will be necessary to download and run a fresh script.
-
-Execute these commands as the ipopp user on the processor EC2 instance after logging in with SSH or PuTTY. 
-
-1. Open Firefox and navigate to the IPOPP v5.0 download page -> https://directreadout.sci.gsfc.nasa.gov/?id=dspContent&cid=347&type=software
-2. Login using your NASA DRL credentials. 
-3. Click the blue box "Click To Download Version: 5.0" and accept the statement.
-4. Download downloader_DRL-IPOPP_5.0.sh
-5. Open a terminal and navigate to the Downloads directory. 
-
-    ```bash
-    cd /home/ipopp/Downloads
-    ```
-
-6. Move the downloader_DRL-IPOPP_5.0.sh script to /home/ipopp/ 
-
-    ```bash
-    mv downloader_DRL-IPOPP_5.0.sh /home/ipopp/downloader_DRL-IPOPP_5.0.sh
-    ```
-
-7. Make the download script executable and run it.
-
-    ```bash
-    cd /home/ipopp/
-    chmod +x downloader_DRL-IPOPP_5.0.sh
-    ./downloader_DRL-IPOPP_5.0.sh
-    ```
-
-8. Wait for the download to finish. This should take about 1 hour or so. 
-9. Once DRL-IPOPP_5.0.tar.gz is downloaded and assembled run the install-ipopp.sh script as the ipopp user. 
-
-    ```bash
-    /opt/aws/groundstation/bin/install-ipopp.sh 
-    ```
-10. Restart the instance to make sure the installation completed successfully. 
-
-    ```bash
-    sudo reboot 
-    ``````
 
 
 ##  IPOPP SPA Configuration
@@ -488,4 +409,6 @@ With this guide you asynchronously downlink data to an S3 bucket, without the ne
     ssh -4 -L 5901:localhost:5901 -i <path to pem file> ubuntu@<public ip address of EC2 instance>
     ```
 
-4. This is more of an FYI than an error. IPOPP will limit the products it produces if it is dark during the satellite contact. So if you don't see the product you need this may be the reason. For deeper troubleshooting you will need to get low-down and dirty in IPOPP and SPA error tracking - this is a bit messy and probably warrants it's own separate document!
+4. This is more of an FYI than an error. The RT-STPS processor instance will auto-shutdown if it does not find a file to process. If you want to stop the auto-shutdown then add a tag to the instance with both key and value equal to "NoShutdown"
+
+5. This is more of an FYI than an error. IPOPP will limit the products it produces if it is dark during the satellite contact. So if you don't see the product you need this may be the reason. For deeper troubleshooting you will need to get low-down and dirty in IPOPP and SPA error tracking - this is a bit messy and probably warrants it's own separate document!

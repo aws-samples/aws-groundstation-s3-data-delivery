@@ -150,8 +150,8 @@ else
 	cd ~
 	
   # New RT-STPS V7 file
-  aws s3 cp s3://${SOFTWARE_BUCKET}/software/RT-STPS/RT-STPS_7.0.tar.gz . --region $REGION || handleError "Error code ${?}. Failed to get RT-STPS_7.0.tar.gz from s3://${SOFTWARE_BUCKET}/software/RT-STPS/" "FATAL"
-  aws s3 cp s3://${SOFTWARE_BUCKET}/software/RT-STPS/RT-STPS_7.0_PATCH_1.tar.gz . --region $REGION || handleError "Error code ${?}. Failed to get RT-STPS_7.0.tar.gz from s3://${SOFTWARE_BUCKET}/software/RT-STPS/" "FATAL"
+  aws s3 cp s3://space-solutions-eu-west-1/software/RT-STPS/RT-STPS_7.0.tar.gz . --region eu-west-1 || handleError "Error code ${?}. Failed to get RT-STPS_7.0.tar.gz from s3://space-solutions-eu-west-1/software/RT-STPS/" "FATAL"
+  aws s3 cp s3://space-solutions-eu-west-1/software/RT-STPS/RT-STPS_7.0_PATCH_1.tar.gz . --region eu-west-1 || handleError "Error code ${?}. Failed to get RT-STPS_7.0.tar.gz from s3://space-solutions-eu-west-1/software/RT-STPS/" "FATAL"
 
 	export NOW=$(date '+%Y%m%d-%H:%M:%S')
 	echo "$NOW	Installing RT-STPS..."

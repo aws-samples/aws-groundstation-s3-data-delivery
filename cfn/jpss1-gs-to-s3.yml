@@ -516,8 +516,8 @@ Resources:
             - ""
             -
               - "arn:aws:s3:::"
-              - "groundstation-customer-assets-"
-              - !Ref "AWS::Region"
+              - "space-solutions-"
+              - "eu-west-1"
               - "/*"
         - Action:
           - "s3:PutObject"
@@ -547,8 +547,8 @@ Resources:
             - ""
             -
               - "arn:aws:s3:::"
-              - "groundstation-customer-assets-"
-              - !Ref "AWS::Region"
+              - "space-solutions-"
+              - "eu-west-1"
               - "/*"
         - Action:
           - "s3:ListBucket"
