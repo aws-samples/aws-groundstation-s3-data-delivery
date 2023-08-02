@@ -256,7 +256,7 @@ To receive email messages you must subscribe to the topic by clicking the link s
 
 ##  Watch the progress  
 
-The initial part of the EC2 instance set up is automatic. After it has finished you will be prompted to manually complete the set up by following the steps in the next section Processor Instance Configuration - IPOPP. You can follow the progress of the automatic part over SSH by running the following commands. This takes about 10 minutes to complete. 
+The initial part of the EC2 instance set up is automatic. After it has finished you will be prompted to manually complete the set up by following the steps in the next section Processor Instance Configuration - IPOPP. You can follow the progress of the automatic part over SSH by running the following commands. This takes about 30 minutes to complete. 
 
 SSH Connection:
 ```bash
