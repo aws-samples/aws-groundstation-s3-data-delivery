@@ -52,7 +52,7 @@ Parameters:
     Type: String
     Description: This bucket will be created. Data will be delivered to this S3 bucket. Name must start with "aws-groundstation-"
     Default: "aws-groundstation-s3dd-your-bucket"
-    AllowedPattern: "^aws-groundstation-[a-z0-9-]+"
+    AllowedPattern: "^aws-groundstation-[a-z0-9-.]+"
 
   NotificationEmail:
     Default: 'someone@somewhere.com'
@@ -72,7 +72,6 @@ Parameters:
       Type: String
       Description: RT-STPS Software
       Default: "your-software-bucket"
-      AllowedPattern: "[a-z0-9-]+"
 
   SSHCidrBlock:
     Description: The CIDR Block that the security group will allow ssh access to an instance. The CIDR Block has the form x.x.x.x/x.
@@ -459,7 +458,7 @@ Resources:
         Variables:
           RtstpsInstance: !Ref ReceiverInstance
       Handler: index.handle_cloudwatch_event
-      Runtime: python3.7
+      Runtime: python3.9
       MemorySize: 512
       Timeout: 300
       Role: !GetAtt GroundStationS3ddLambdaRole.Arn

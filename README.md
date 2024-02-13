@@ -242,8 +242,8 @@ Create a CFN stack using the template the ipopp-instance.yml template.
 - SoftwareS3Bucket: 'your-software-bucket-name' (Where you uploaded the software)
 - InstanceType: c5.xlarge is OK for most IPOPP Software Processing Algorithms (SPAs). However, you will need m5.4xlarge to use the Blue Marble MODIS Sharpened Natural/True color SPAs.
 - IpoppPassword: 'Enter a password to use for the ipopp user account and VNC password on the EC2 instance'
-- SubnetId: 'A Public Subnet'
 - VpcId: 'Select the VPC containing the above public subnet'
+- SubnetId: 'A Public Subnet'
 - SSHCidrBlock: 'your-public-ip'/32. If needed get it from https://whatismyip.com. Ensure you add “/32” to the end of the IP address
 - SSHKeyName: 'your-ssh-key-name'
 - NotificationEmail: 'Email address to receive processing updates'
@@ -283,10 +283,10 @@ These last steps in the configuration of the IPOPP processor instance must be co
 
 ## Prerequisites
 
-Download and install the Tiger VNC Client from [here](https://sourceforge.net/projects/tigervnc/files/stable/1.12.0/).
-Or use the following quick-links for [Linux](https://sourceforge.net/projects/tigervnc/files/stable/1.12.0/tigervnc-1.12.0.x86_64.tar.gz/download),
-[Mac](https://sourceforge.net/projects/tigervnc/files/stable/1.12.0/TigerVNC-1.12.0.dmg/download)
-and [64 bit Windows](https://sourceforge.net/projects/tigervnc/files/stable/1.12.0/vncviewer64-1.12.0.exe/download).
+Download and install the Tiger VNC Client from [here](https://sourceforge.net/projects/tigervnc/files/stable/1.13.1/).
+Or use the following quick-links for [Linux](https://sourceforge.net/projects/tigervnc/files/stable/1.13.1/tigervnc-1.13.1.x86_64.tar.gz/download),
+[Mac](https://sourceforge.net/projects/tigervnc/files/stable/1.13.1/TigerVNC-1.13.1.dmg/download)
+and [64 bit Windows](https://sourceforge.net/projects/tigervnc/files/stable/1.13.1/vncviewer64-1.13.1.exe/download).
 
 ## VNC Setup - Linux / Mac
 

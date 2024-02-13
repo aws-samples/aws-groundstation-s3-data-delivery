@@ -230,7 +230,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Handler: index.handle_sns_event
-      Runtime: python3.7
+      Runtime: python3.9
       MemorySize: 128
       Timeout: 120
       Role: !GetAtt GsIpoppLambdaRole.Arn
