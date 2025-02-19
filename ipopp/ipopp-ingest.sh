@@ -57,7 +57,9 @@
 SatelliteName=$1
 SOFTWARE_BUCKET=$2
 DATA_BUCKET=$3
-REGION=$(curl -s 169.254.169.254/latest/meta-data/placement/availability-zone | sed 's/.$//')
+# Get IMDSv2 token for local metadata
+TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`
+REGION=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s 169.254.169.254/latest/meta-data/placement/availability-zone | sed 's/.$//')
 LC_SatelliteName=$(echo $SatelliteName | tr "[:upper:]" "[:lower:]")
 TIMESTR=$(date '+%Y%m%d-%H%M')
 

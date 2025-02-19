@@ -686,7 +686,9 @@ Resources:
               echo `date +'%F %R:%S'` "INFO: Logging Setup" >&2
 
               echo "Setting instance hostname"
-              export INSTANCE=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+              # Get IMDSv2 token for local metadata
+              TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`
+              export INSTANCE=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/instance-id)
               export HOSTNAME=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE" "Name=key,Values=Name" --region=${AWS::Region} --output=text |cut -f5)
               echo $HOSTNAME > /etc/hostname
               hostname $HOSTNAME

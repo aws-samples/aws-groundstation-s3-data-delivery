@@ -51,8 +51,10 @@ export SatelliteName=$1
 export SOFTWARE_BUCKET=$2
 export DATA_BUCKET=$3
 export MIN_RAW_FILESIZE=2000000
-export REGION=$(curl -s 169.254.169.254/latest/meta-data/placement/availability-zone | sed 's/.$//')
-export INSTANCE=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+# Get IMDSv2 token for local metadata
+TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`
+export REGION=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s 169.254.169.254/latest/meta-data/placement/availability-zone | sed 's/.$//')
+export INSTANCE=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/instance-id)
 export NOSHUTDOWN=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE" "Name=key,Values=NoShutdown" --region=$REGION --output=text| cut -f5)
 export LC_SatelliteName=$(echo $SatelliteName | tr "[:upper:]" "[:lower:]")
 
@@ -129,6 +131,10 @@ START_TIME=$NOW
 echo "$NOW	Satellite: ${SatelliteName}"
 echo "$NOW	Software bucket: ${SOFTWARE_BUCKET}"
 echo "$NOW	Software bucket: ${DATA_BUCKET}"
+# Add Additional Variable Display
+echo "$NOW	Region: ${REGION}"
+echo "$NOW	Instance ID: ${INSTANCE}"
+echo "$NOW	NoShutdown: ${NOSHUTDOWN}"
 
 # If SNS topic is configured
 if [ -f /opt/aws/groundstation/bin/getSNSTopic.sh ] ; then
